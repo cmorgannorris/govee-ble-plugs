@@ -384,6 +384,11 @@ class GoveePlugH5086(GoveePlugH508x):
         return self._is_on
 
     def handle_bluetooth_event(self, device: BLEDevice, adv: AdvertisementData):
+        _LOGGER.debug(
+            "%s: H5086 advertisement received (cooldown: %s)",
+            device.name or device.address,
+            "active" if self._should_ignore_advertisement() else "inactive",
+        )
         if self._should_ignore_advertisement():
             _LOGGER.debug(
                 "%s: Ignoring advertisement due to recent command",
