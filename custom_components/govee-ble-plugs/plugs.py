@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import logging
 import queue
+import time
 import typing as T
 
 from bleak import BleakClient
@@ -12,6 +13,10 @@ from bleak_retry_connector import establish_connection
 from homeassistant.exceptions import ConfigEntryError
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
+
+# Ignore BLE advertisements for this many seconds after sending a command
+# to prevent stale advertisements from overwriting the optimistic state update
+COMMAND_COOLDOWN_SECONDS = 3.0
 
 
 def _b(s: str):
@@ -136,12 +141,24 @@ class GoveePlugH508x:
 
         self._connection_task: T.Optional[asyncio.Task] = None
         self._msgqueue = asyncio.Queue[T.Tuple[bytes, asyncio.Future[bool]]]()
+        self._last_command_time: float = 0
 
     async def _send_message(self, msg: bytes) -> bool:
         f = asyncio.Future[bool]()
         self._msgqueue.put_nowait((msg, f))
         self._ensure_message_task()
-        return await f
+        result = await f
+        # Record when command was sent to ignore stale advertisements
+        if result:
+            self._last_command_time = time.monotonic()
+        return result
+
+    def _should_ignore_advertisement(self) -> bool:
+        """Check if we should ignore BLE advertisements due to recent command."""
+        if self._last_command_time == 0:
+            return False
+        elapsed = time.monotonic() - self._last_command_time
+        return elapsed < COMMAND_COOLDOWN_SECONDS
 
     def _ensure_message_task(self):
         if not self._connection_task:
@@ -263,6 +280,12 @@ class GoveePlugH5080(GoveePlugH508x):
         return self._is_on
 
     def handle_bluetooth_event(self, device: BLEDevice, adv: AdvertisementData):
+        if self._should_ignore_advertisement():
+            _LOGGER.debug(
+                "%s: Ignoring advertisement due to recent command",
+                device.name or device.address,
+            )
+            return
         for _, mfr_data in adv.manufacturer_data.items():
             self._device = device
             self._is_on = mfr_data[-1] == 0x01
@@ -304,6 +327,12 @@ class GoveePlugH5082(GoveePlugH508x):
         return self._is_on[port]
 
     def handle_bluetooth_event(self, device: BLEDevice, adv: AdvertisementData):
+        if self._should_ignore_advertisement():
+            _LOGGER.debug(
+                "%s: Ignoring advertisement due to recent command",
+                device.name or device.address,
+            )
+            return
         for _, mfr_data in adv.manufacturer_data.items():
             self._device = device
             self._is_on[0] = (mfr_data[-1] & 0x2) == 0x2
@@ -355,6 +384,12 @@ class GoveePlugH5086(GoveePlugH508x):
         return self._is_on
 
     def handle_bluetooth_event(self, device: BLEDevice, adv: AdvertisementData):
+        if self._should_ignore_advertisement():
+            _LOGGER.debug(
+                "%s: Ignoring advertisement due to recent command",
+                device.name or device.address,
+            )
+            return
         for _, mfr_data in adv.manufacturer_data.items():
             self._device = device
             self._is_on = mfr_data[-1] == 0x01
