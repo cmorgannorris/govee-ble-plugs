@@ -390,8 +390,16 @@ class GoveePlugH5086(GoveePlugH508x):
                 device.name or device.address,
             )
             return
-        for _, mfr_data in adv.manufacturer_data.items():
+        for mfr_id, mfr_data in adv.manufacturer_data.items():
             self._device = device
+            # Debug: log full manufacturer data to explore energy monitoring data
+            _LOGGER.debug(
+                "%s: H5086 manufacturer data (ID: 0x%04x, len: %d): %s",
+                device.name or device.address,
+                mfr_id,
+                len(mfr_data),
+                mfr_data.hex(),
+            )
             self._is_on = mfr_data[-1] == 0x01
 
     async def async_turn_on(self, port: int):
