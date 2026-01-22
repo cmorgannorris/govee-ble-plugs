@@ -405,7 +405,9 @@ class GoveePlugH5086(GoveePlugH508x):
                 len(mfr_data),
                 mfr_data.hex(),
             )
-            self._is_on = mfr_data[-1] == 0x01
+            # H5086 format: ec 00 01 01 [STATE] 00
+            # State is in byte 4 (index -2), not the last byte
+            self._is_on = mfr_data[-2] == 0x01
 
     async def async_turn_on(self, port: int):
         assert port == 0
